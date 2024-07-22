@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Template for resume back-end
+
+Parameters:
+  ApplicationName:
+    Description: "Name of application"
+    Type: String
+    Default: "resumebackend"
+
+  S3LogBucket:
+    Description: 'Bucket to store logs'
+    Type: String
+    Default: hungnv-resume-log
+    
+  DomainName:
+    Description: 'Domain name, need one'
+    Type: String
+    Default: hungnv.net
+
+  HostedZone:
+    Description: 'Domain name, need one'
+    Type: String
+    Default: hungnv.net
+
+  CertificateArn:
+    Description: 'arn of certificate'
+    Type: String
+    Default: "arn:aws:acm:us-east-1:590067613053:certificate/2e392cef-aa28-4b7e-9ff5-cc51ff8764e8"
+  
+Resources:
+  WebsiteDNSName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:   
+        DNSName: !GetAtt WebsiteCDN.DomainName
+        EvaluateTargetHealth: false
+        HostedZoneId: Z2FDTNDATAQYW2
+      HostedZoneName: !Sub '${HostedZone}.'
+      Comment: A redirect hostedzone to CloudFront distribution
+      Name: !Ref 'DomainName'
+      Type: A
+      # TTL: 86400
+      # ResourceRecords:
+      # - !GetAtt [WebsiteCDN, DomainName]
+
+  S3BucketForWebsiteContent:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Join [ '-', [ !Ref 'AWS::StackName', 's3-origin' ] ]
+
+  WebsiteCDN:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment:  !Ref DomainName
+        Aliases:
+        - !Ref 'DomainName'
+        Enabled: true
+        HttpVersion: 'http2'
+        #Web behavior
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+          CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6" # policy for CachingOptimized
+          Compress: true
+          DefaultTTL: 3600 # in seconds
+          MaxTTL: 86400 # in seconds
+          MinTTL: 1 # in seconds
+
+          TargetOriginId: !Ref 'S3BucketForWebsiteContent'
+          ViewerProtocolPolicy: redirect-to-https
+          # LambdaFunctionAssociations:
+          # - EventType: viewer-request
+          #   LambdaFunctionARN: !GetAtt LambdaEdgePutCountFunction.FunctionArn
+
+        DefaultRootObject: index.html
+        #Api behavior
+
+        ViewerCertificate:
+          SslSupportMethod: 'sni-only'
+          AcmCertificateArn: !Ref CertificateArn
+          MinimumProtocolVersion: 'TLSv1.2_2021'  
+
+        CustomErrorResponses:
+        - ErrorCode: 403
+          ResponsePagePath: "/index.html"
+          ResponseCode: 200
+          ErrorCachingMinTTL: 3600
+
+        # Access logs 
+        # Logging: 
+        #   Bucket: !Ref S3LogBucket
+        #   Prefix: !Ref 'AWS::StackName'
+        
+        Origins:
+          - DomainName: !GetAtt S3BucketForWebsiteContent.DomainName
+            Id: !Ref 'S3BucketForWebsiteContent'
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginIdentity}'
+
+
+  CloudFrontOriginIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Join [ '-', [ !Ref 'AWS::StackName', 'origin identity' ] ]
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3BucketForWebsiteContent
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOriginIdentity}'
+            Action: 's3:GetObject'
+            Resource: !Sub
+              - ${S3OrginalARN}/*
+              - S3OrginalARN: !GetAtt 'S3BucketForWebsiteContent.Arn'
+  
+  
+  GetCountFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: cloud-resume-challenge
+      CodeUri: src/
+      Handler: get_count.lambda_handler
+      Runtime: python3.9
+      Events:
+        Count:
+          Type: Api 
+          Properties:
+            Path: /get
+            Method: get
+
+  PutCountFunction:
+    Type: AWS::Serverless::Function 
+    Properties:
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: cloud-resume-challenge
+      CodeUri: src/
+      Handler: put_count.lambda_handler
+      Runtime: python3.9
+      Events:
+        Count:
+          Type: Api
+          Properties:
+            Path: /put
+            Method: get
+
+  LambdaEdgePutCountFunction:
+      Type: AWS::Serverless::Function
+      Properties:
+        CodeUri: src/
+        Role: !GetAtt LambdaEdgeFunctionRole.Arn
+        Runtime: python3.9
+        Handler: put_count_edge.lambda_handler
+        Timeout: 10
+        AutoPublishAlias: live 
+
+  LambdaEdgeFunctionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+        Path: "/"
+        ManagedPolicyArns:
+            - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: "AllowLambdaServiceToAssumeRole"
+              Effect: "Allow"
+              Action: 
+                - "sts:AssumeRole"
+              Principal:
+                Service: 
+                  - "lambda.amazonaws.com"
+                  - "edgelambda.amazonaws.com"
+            - Sid: "Allow DynamoDB"
+              Action:
+                - 'dynamodb:GetItem'
+                - 'dynamodb:UpdateItem'
+              Resource: !GetAtt 
+                - DynamoDBTable
+                - Arn
+              Effect: Allow
+
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: cloud-resume-challenge
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "ID"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "ID"
+          KeyType: "HASH"
+
+Outputs:
+  CountApi:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
