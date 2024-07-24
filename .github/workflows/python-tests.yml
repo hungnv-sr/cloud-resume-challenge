@@ -31,5 +31,5 @@ jobs:
     steps:
     - name: Deploy with cloudformation
       run: |
-        aws cloudformation package --template-file template.yaml --output-template-file serverless-output.yaml --s3-bucket $AWS_S3_BUCKET
-        aws cloudformation deploy --template-file serverless-output.yaml --stack-name $STACK_NAME --capabilities CAPABILITY_NAMED_IAM --no-execute-changeset
+        aws cloudformation package --template-file template.yaml --output-template-file serverless-output.yaml --s3-bucket ${{ secrets.AWS_S3_BUCKET }}
+        aws cloudformation deploy --template-file serverless-output.yaml --stack-name ${{ secrets.STACK_NAME }} --capabilities CAPABILITY_NAMED_IAM --no-execute-changeset
