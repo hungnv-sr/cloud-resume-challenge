@@ -33,5 +33,5 @@ jobs:
       env:
         AWS_DEFAULT_REGION: ap-southeast-1
       run: |
-        aws cloudformation package --template-file template.yml --output-template-file serverless-output.yaml --s3-bucket ${{ secrets.AWS_S3_BUCKET }}
+        aws cloudformation package --template-file ./template.yml --output-template-file serverless-output.yaml --s3-bucket ${{ secrets.AWS_S3_BUCKET }}
         aws cloudformation deploy --template-file serverless-output.yaml --stack-name ${{ secrets.STACK_NAME }} --capabilities CAPABILITY_NAMED_IAM --no-execute-changeset
