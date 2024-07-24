@@ -24,3 +24,12 @@ jobs:
         AWS_DEFAULT_REGION: ap-southeast-1
       run: |
         python -m unittest discover -v -s ./test
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+    - name: Deploy with cloudformation
+      run: |
+        aws cloudformation package --template-file template.yaml --output-template-file serverless-output.yaml --s3-bucket $AWS_S3_BUCKET
+        aws cloudformation deploy --template-file serverless-output.yaml --stack-name $STACK_NAME --capabilities CAPABILITY_NAMED_IAM --no-execute-changeset
