@@ -23,7 +23,13 @@ jobs:
       env:
         AWS_DEFAULT_REGION: ap-southeast-1
       run: |
-        python -m unittest discover -v -s ./test
+        coverage run -m unittest discover
+        coverage xml
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4.0.1
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   deploy:
     runs-on: ubuntu-latest

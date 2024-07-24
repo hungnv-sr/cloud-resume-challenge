@@ -2,3 +2,5 @@ serverless-output.yaml
 .vscode
 venv
 __pycache__
+.pytest_cache
+.coverage
