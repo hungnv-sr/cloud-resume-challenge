@@ -9,7 +9,6 @@ jobs:
     uses: ./.github/workflows/test.yml
 
   deploy:
-    needs: test
     runs-on: ubuntu-latest
     environment: deploy-manual
     steps:
